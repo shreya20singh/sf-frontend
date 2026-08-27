@@ -25,9 +25,8 @@ export default function ContactPhotoField({
   const readVersionRef = useRef(0);
   const [photo, setPhoto] = useState(initialPhoto ?? "");
   const [clientError, setClientError] = useState<string>();
-  const [hasChanged, setHasChanged] = useState(false);
   const [previewError, setPreviewError] = useState(false);
-  const displayedError = hasChanged ? clientError : error;
+  const displayedError = clientError ?? error;
   const errorId = "contact-photo-error";
 
   useEffect(() => {
@@ -54,7 +53,6 @@ export default function ContactPhotoField({
     const file = event.target.files?.[0];
     if (!file) return;
     const readVersion = invalidateRead();
-    setHasChanged(true);
 
     if (!ACCEPTED_TYPES.has(file.type)) {
       setClientError("Choose a JPG, PNG, WebP, or GIF image");
@@ -100,7 +98,6 @@ export default function ContactPhotoField({
 
   function removePhoto() {
     invalidateRead();
-    setHasChanged(true);
     setPhoto("");
     setClientError(undefined);
     if (inputRef.current) inputRef.current.value = "";

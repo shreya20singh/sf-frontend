@@ -84,6 +84,32 @@ describe("ContactForm", () => {
     );
   });
 
+  it("shows a server photo error after local interaction", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({
+        status: "error",
+        message: "The API rejected these values.",
+        fieldErrors: { photo: "Photo content is invalid." },
+      }),
+    );
+    renderForm(action);
+
+    await userEvent.upload(
+      screen.getByLabelText(/contact photo/i),
+      new File([PHOTO_BYTES], "avatar.png", { type: "image/png" }),
+    );
+    await screen.findByRole("img", { name: /contact photo preview/i });
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    expect(
+      await screen.findByText("Photo content is invalid."),
+    ).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
   it("can remove an existing photo", async () => {
     const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
       async () => ({ status: "idle" }),
