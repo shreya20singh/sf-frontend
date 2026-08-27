@@ -13,6 +13,7 @@ import {
 import {
   contactInputSchema,
   formDataToValues,
+  zodAddressErrors,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
 import type { Contact, FormState } from "@/lib/contacts/types";
@@ -38,7 +39,7 @@ export async function saveContactAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const values = formDataToValues(formData);
+  const values = await formDataToValues(formData);
 
   const parsed = contactInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -46,6 +47,7 @@ export async function saveContactAction(
       status: "error",
       message: "Please fix the highlighted fields.",
       fieldErrors: zodFieldErrors(parsed.error),
+      addressErrors: zodAddressErrors(parsed.error),
       values,
     };
   }
@@ -72,10 +74,11 @@ export async function saveContactAction(
         };
       }
       if (error.status === 422) {
+        const errors = toFieldErrors(error);
         return {
           status: "error",
           message: "The API rejected these values.",
-          fieldErrors: toFieldErrors(error),
+          ...errors,
           values,
         };
       }

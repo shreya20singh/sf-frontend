@@ -3,8 +3,14 @@ import {
   CONTACT_FIELDS,
   contactInputSchema,
   formDataToValues,
+  photoFileToDataUrl,
+  photoValidationError,
+  zodAddressErrors,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+
+const PHOTO_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function values(overrides: Record<string, string> = {}) {
   return {
@@ -15,11 +21,7 @@ function values(overrides: Record<string, string> = {}) {
     phone: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
+    addresses: "[]",
     notes: "",
     ...overrides,
   };
@@ -40,9 +42,73 @@ describe("contactInputSchema", () => {
     );
   });
 
+  it("validates and normalizes multiple addresses", () => {
+    const parsed = contactInputSchema.parse(
+      values({
+        addresses: JSON.stringify([
+          {
+            type: "Home",
+            address: " 12 Home St ",
+            city: " Oakland ",
+            state: "",
+            postal_code: "",
+            country: " USA ",
+          },
+          {
+            type: "Work",
+            address: "1 Market St",
+            city: "San Francisco",
+            state: "CA",
+            postal_code: "94105",
+            country: "USA",
+          },
+        ]),
+      }),
+    );
+
+    expect(parsed.addresses).toEqual([
+      {
+        type: "Home",
+        address: "12 Home St",
+        city: "Oakland",
+        state: null,
+        postal_code: null,
+        country: "USA",
+      },
+      {
+        type: "Work",
+        address: "1 Market St",
+        city: "San Francisco",
+        state: "CA",
+        postal_code: "94105",
+        country: "USA",
+      },
+    ]);
+  });
+
+  it("reports errors against the exact address row", () => {
+    const result = contactInputSchema.safeParse(
+      values({
+        addresses: JSON.stringify([
+          {
+            type: "Home",
+            address: "",
+            city: "",
+            state: "",
+            postal_code: "",
+            country: "",
+          },
+        ]),
+      }),
+    );
+
+    expect(zodAddressErrors(result.error!)).toEqual({
+      0: { address: "Street address is required" },
+    });
+  });
+
   it("accepts a supported photo data URL", () => {
-    const photo =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+    const photo = `data:image/png;base64,${PHOTO_BASE64}`;
     expect(contactInputSchema.parse(values({ photo })).photo).toBe(photo);
   });
 
@@ -59,6 +125,12 @@ describe("contactInputSchema", () => {
     const tooLarge = contactInputSchema.safeParse(values({ photo: oversized }));
     expect(zodFieldErrors(tooLarge.error!).photo).toBe(
       "Photo must be 2 MB or smaller",
+    );
+  });
+
+  it("rejects truncated image payloads", () => {
+    expect(photoValidationError("data:image/jpeg;base64,/9j/")).toMatch(
+      /does not match/i,
     );
   });
 
@@ -82,30 +154,63 @@ describe("contactInputSchema", () => {
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({
+        first_name: "a".repeat(101),
+        addresses: JSON.stringify([
+          {
+            type: "Home",
+            address: "12 Home St",
+            city: "",
+            state: "",
+            postal_code: "9".repeat(21),
+            country: "",
+          },
+        ]),
+      }),
     );
 
-    expect(zodFieldErrors(result.error!)).toEqual({
-      first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
+    expect(zodFieldErrors(result.error!).first_name).toBe(
+      "First name must be 100 characters or fewer",
+    );
+    expect(zodAddressErrors(result.error!)).toEqual({
+      0: {
+        postal_code: "Postal code must be 20 characters or fewer",
+      },
     });
   });
 });
 
 describe("formDataToValues", () => {
-  it("pulls every known field out, defaulting to an empty string", () => {
+  it("pulls every known field out, defaulting to an empty string", async () => {
     const formData = new FormData();
     formData.set("first_name", "Grace");
     formData.set("email", "grace@example.com");
     formData.set("ignored", "nope");
 
-    const extracted = formDataToValues(formData);
+    const extracted = await formDataToValues(formData);
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
     expect(extracted.photo).toBe("");
+    expect(extracted.addresses).toBe("");
     expect(Object.keys(extracted).sort()).toEqual(
-      [...CONTACT_FIELDS.map((field) => field.name), "photo"].sort(),
+      [...CONTACT_FIELDS.map((field) => field.name), "photo", "addresses"].sort(),
     );
+  });
+
+  it("converts a native photo file before schema validation", async () => {
+    const bytes = Uint8Array.from(atob(PHOTO_BASE64), (character) =>
+      character.charCodeAt(0),
+    );
+    const formData = new FormData();
+    formData.set("photo", "existing-photo");
+    formData.set(
+      "photo_file",
+      new File([bytes], "avatar.png", { type: "image/png" }),
+    );
+
+    await expect(formDataToValues(formData)).resolves.toMatchObject({
+      photo: `data:image/png;base64,${PHOTO_BASE64}`,
+    });
   });
 });

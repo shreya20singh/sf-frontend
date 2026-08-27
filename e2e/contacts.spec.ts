@@ -89,7 +89,7 @@ test.describe('Contacts', () => {
       name: 'avatar.png',
       mimeType: 'image/png',
       buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
         'base64',
       ),
     })
@@ -104,6 +104,46 @@ test.describe('Contacts', () => {
     await expect(page.getByRole('img', { name: avatarName })).toBeVisible()
 
     await deleteFromDetailPage(page, `Profile ${last}`)
+  })
+
+  test('creates, groups, edits, and removes multiple addresses', async ({ page }) => {
+    const email = uniqueEmail('addresses')
+    const last = `Address${Date.now().toString().slice(-6)}`
+
+    await page.goto('/contacts/new')
+    await page.getByLabel('First name').fill('Multi')
+    await page.getByLabel('Last name').fill(last)
+    await page.getByLabel('Email', { exact: false }).first().fill(email)
+
+    await page.getByRole('button', { name: 'Add address' }).click()
+    const home = page.getByRole('group', { name: 'Address 1' })
+    await home.getByLabel('Type').selectOption('Home')
+    await home.getByLabel('Street address').fill('12 Home St')
+    await home.getByLabel('City').fill('Oakland')
+
+    await page.getByRole('button', { name: 'Add address' }).click()
+    const work = page.getByRole('group', { name: 'Address 2' })
+    await work.getByLabel('Type').selectOption('Work')
+    await work.getByLabel('Street address').fill('1 Market St')
+    await work.getByLabel('City').fill('San Francisco')
+
+    await page.getByRole('button', { name: 'Create contact' }).click()
+    await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Work' })).toBeVisible()
+    await expect(page.getByText(/12 Home St, Oakland/)).toBeVisible()
+    await expect(page.getByText(/1 Market St, San Francisco/)).toBeVisible()
+
+    await page.getByRole('link', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Remove address 1' }).click()
+    const remaining = page.getByRole('group', { name: 'Address 1' })
+    await remaining.getByLabel('Street address').fill('2 Market St')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Home' })).toHaveCount(0)
+    await expect(page.getByText(/12 Home St/)).toHaveCount(0)
+    await expect(page.getByText(/2 Market St, San Francisco/)).toBeVisible()
+
+    await deleteFromDetailPage(page, `Multi ${last}`)
   })
 
   test('rejects a duplicate email with a field-level error', async ({ page }) => {
