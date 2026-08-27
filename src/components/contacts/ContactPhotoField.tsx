@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import { ImagePlus, Trash2 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import {
   ACCEPTED_PHOTO_TYPES,
   MAX_PHOTO_BYTES,
+  PHOTO_FILE_FIELD,
   photoValidationError,
 } from "@/lib/contacts/schema";
 
@@ -20,15 +21,39 @@ export default function ContactPhotoField({
   error?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const readerRef = useRef<FileReader | null>(null);
+  const readVersionRef = useRef(0);
   const [photo, setPhoto] = useState(initialPhoto ?? "");
   const [clientError, setClientError] = useState<string>();
   const [hasChanged, setHasChanged] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
   const displayedError = hasChanged ? clientError : error;
   const errorId = "contact-photo-error";
+
+  useEffect(() => {
+    setPreviewError(false);
+  }, [photo]);
+
+  useEffect(
+    () => () => {
+      readVersionRef.current += 1;
+      readerRef.current?.abort();
+      readerRef.current = null;
+    },
+    [],
+  );
+
+  function invalidateRead(): number {
+    readVersionRef.current += 1;
+    readerRef.current?.abort();
+    readerRef.current = null;
+    return readVersionRef.current;
+  }
 
   function selectPhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const readVersion = invalidateRead();
     setHasChanged(true);
 
     if (!ACCEPTED_TYPES.has(file.type)) {
@@ -43,9 +68,15 @@ export default function ContactPhotoField({
     }
 
     const reader = new FileReader();
+    readerRef.current = reader;
+    const isCurrentRead = () =>
+      readVersionRef.current === readVersion && readerRef.current === reader;
     reader.onload = () => {
+      if (!isCurrentRead()) return;
+      readerRef.current = null;
       if (typeof reader.result !== "string") {
         setClientError("The photo could not be read");
+        if (inputRef.current) inputRef.current.value = "";
         return;
       }
       const validationError = photoValidationError(reader.result);
@@ -56,12 +87,19 @@ export default function ContactPhotoField({
       }
       setPhoto(reader.result);
       setClientError(undefined);
+      if (inputRef.current) inputRef.current.value = "";
     };
-    reader.onerror = () => setClientError("The photo could not be read");
+    reader.onerror = () => {
+      if (!isCurrentRead()) return;
+      readerRef.current = null;
+      setClientError("The photo could not be read");
+      if (inputRef.current) inputRef.current.value = "";
+    };
     reader.readAsDataURL(file);
   }
 
   function removePhoto() {
+    invalidateRead();
     setHasChanged(true);
     setPhoto("");
     setClientError(undefined);
@@ -83,13 +121,14 @@ export default function ContactPhotoField({
 
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary/40">
-          {photo ? (
+          {photo && !previewError ? (
             <Image
               src={photo}
               alt="Contact photo preview"
               width={96}
               height={96}
               unoptimized
+              onError={() => setPreviewError(true)}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -115,6 +154,7 @@ export default function ContactPhotoField({
             ref={inputRef}
             id="contact-photo"
             type="file"
+            name={PHOTO_FILE_FIELD}
             accept={ACCEPTED_PHOTO_TYPES.join(",")}
             onChange={selectPhoto}
             aria-invalid={displayedError ? true : undefined}

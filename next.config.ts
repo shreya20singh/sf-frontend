@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   experimental: {
     serverActions: {
-      bodySizeLimit: "3mb",
+      bodySizeLimit: "6mb",
     },
   },
   // Hosts allowed to load dev-only resources (/_next/hmr, /_next/static…) when the

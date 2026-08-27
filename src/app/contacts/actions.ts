@@ -38,7 +38,7 @@ export async function saveContactAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const values = formDataToValues(formData);
+  const values = await formDataToValues(formData);
 
   const parsed = contactInputSchema.safeParse(values);
   if (!parsed.success) {

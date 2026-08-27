@@ -3,8 +3,13 @@ import {
   CONTACT_FIELDS,
   contactInputSchema,
   formDataToValues,
+  photoFileToDataUrl,
+  photoValidationError,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+
+const PHOTO_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function values(overrides: Record<string, string> = {}) {
   return {
@@ -41,8 +46,7 @@ describe("contactInputSchema", () => {
   });
 
   it("accepts a supported photo data URL", () => {
-    const photo =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+    const photo = `data:image/png;base64,${PHOTO_BASE64}`;
     expect(contactInputSchema.parse(values({ photo })).photo).toBe(photo);
   });
 
@@ -59,6 +63,12 @@ describe("contactInputSchema", () => {
     const tooLarge = contactInputSchema.safeParse(values({ photo: oversized }));
     expect(zodFieldErrors(tooLarge.error!).photo).toBe(
       "Photo must be 2 MB or smaller",
+    );
+  });
+
+  it("rejects truncated image payloads", () => {
+    expect(photoValidationError("data:image/jpeg;base64,/9j/")).toMatch(
+      /does not match/i,
     );
   });
 
@@ -93,13 +103,13 @@ describe("contactInputSchema", () => {
 });
 
 describe("formDataToValues", () => {
-  it("pulls every known field out, defaulting to an empty string", () => {
+  it("pulls every known field out, defaulting to an empty string", async () => {
     const formData = new FormData();
     formData.set("first_name", "Grace");
     formData.set("email", "grace@example.com");
     formData.set("ignored", "nope");
 
-    const extracted = formDataToValues(formData);
+    const extracted = await formDataToValues(formData);
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
@@ -107,5 +117,21 @@ describe("formDataToValues", () => {
     expect(Object.keys(extracted).sort()).toEqual(
       [...CONTACT_FIELDS.map((field) => field.name), "photo"].sort(),
     );
+  });
+
+  it("converts a native photo file before schema validation", async () => {
+    const bytes = Uint8Array.from(atob(PHOTO_BASE64), (character) =>
+      character.charCodeAt(0),
+    );
+    const formData = new FormData();
+    formData.set("photo", "existing-photo");
+    formData.set(
+      "photo_file",
+      new File([bytes], "avatar.png", { type: "image/png" }),
+    );
+
+    await expect(formDataToValues(formData)).resolves.toMatchObject({
+      photo: `data:image/png;base64,${PHOTO_BASE64}`,
+    });
   });
 });

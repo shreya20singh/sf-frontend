@@ -6,7 +6,11 @@ import { makeContact } from "../mocks/handlers";
 import type { FormState } from "@/lib/contacts/types";
 
 const PHOTO =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const PHOTO_BYTES = Uint8Array.from(
+  atob(PHOTO.slice("data:image/png;base64,".length)),
+  (character) => character.charCodeAt(0),
+);
 
 function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>) {
   return render(
@@ -29,6 +33,10 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
       "accept",
       "image/jpeg,image/png,image/webp,image/gif",
+    );
+    expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
+      "name",
+      "photo_file",
     );
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
@@ -55,7 +63,7 @@ describe("ContactForm", () => {
     );
     renderForm(action);
     const photo = new File(
-      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      [PHOTO_BYTES],
       "avatar.png",
       { type: "image/png" },
     );

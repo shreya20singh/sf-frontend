@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import Image from "next/image";
 import { avatarHue, initials } from "@/lib/contacts/format";
@@ -18,8 +21,13 @@ export default function ContactAvatar({
 }) {
   const dimensions = SIZES[size];
   const fullName = `${contact.first_name} ${contact.last_name}`.trim();
+  const [imageError, setImageError] = useState(false);
 
-  if (contact.photo) {
+  useEffect(() => {
+    setImageError(false);
+  }, [contact.photo]);
+
+  if (contact.photo && !imageError) {
     return (
       <Image
         src={contact.photo}
@@ -27,6 +35,7 @@ export default function ContactAvatar({
         width={dimensions.pixels}
         height={dimensions.pixels}
         unoptimized
+        onError={() => setImageError(true)}
         className={`${dimensions.classes} shrink-0 rounded-full border border-border object-cover`}
       />
     );
