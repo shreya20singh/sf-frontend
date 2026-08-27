@@ -1,7 +1,8 @@
 # sf-frontend
 
 Front end for the [Contacts API](http://127.0.0.1:8000/docs) — browse, search, sort,
-page through, create, edit, and delete contacts.
+page through, create, edit, and delete contacts. Contacts can include an optional
+profile photo; the UI renders it as a circular avatar and falls back to initials.
 
 Next.js 16 (App Router) · TypeScript · Tailwind CSS · Zod · Jest + Testing Library
 + MSW · Playwright.
@@ -42,8 +43,9 @@ The landing route (`/` redirects here). What to check, top to bottom:
   selector. Both write to the URL, so the state survives a reload and is
   shareable.
 - **Table** — sortable `Name` and `Email` headers (the arrow shows the active
-  column and direction), an initials avatar per row, `Job title at Company` as
-  the subtitle, and per-row pencil (edit) and trash (delete) actions.
+  column and direction), a circular photo or initials avatar per row,
+  `Job title at Company` as the subtitle, and per-row pencil (edit) and trash
+  (delete) actions.
 - **Footer row** — `Showing 1–3 of 3` with Previous/Next, both disabled on a
   single page.
 - **Version stamp** — `web v0.1.0 (build 2 · 8ce2dc0)` at the bottom of every
@@ -66,6 +68,10 @@ Click a row to get here. It confirms the detail read path works end to end:
   company, job title, address, and notes. Empty optional fields show `—` rather
   than collapsing, so the shape of the record stays readable.
 - **Metadata table** — `ID`, `Created`, and `Last updated` in UTC, monospaced.
+
+The create and edit forms accept JPG, PNG, WebP, or GIF photos up to 2 MB. The
+image is stored as a base64 data URL by the in-memory backend, so it is retained
+through full-replacement edits but is lost when the backend process restarts.
 
 Hand-editing the URL to an ID that does not exist gives you the styled 404 page
 (`src/app/not-found.tsx`), not a stack trace — that is also worth a quick try.

@@ -5,6 +5,9 @@ import ContactForm from "@/components/contacts/ContactForm";
 import { makeContact } from "../mocks/handlers";
 import type { FormState } from "@/lib/contacts/types";
 
+const PHOTO =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+
 function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>) {
   return render(
     <ContactForm
@@ -23,8 +26,80 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/first name/i)).toBeRequired();
     expect(screen.getByLabelText(/last name/i)).toBeRequired();
     expect(screen.getByLabelText(/^email/i)).toBeRequired();
+    expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
+      "accept",
+      "image/jpeg,image/png,image/webp,image/gif",
+    );
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
+  });
+
+  it("prefills and preserves an existing photo", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    renderForm(action, makeContact({ photo: PHOTO }));
+
+    expect(
+      screen.getByRole("img", { name: /contact photo preview/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(action.mock.calls[0][1].get("photo")).toBe(PHOTO);
+  });
+
+  it("reads a selected photo into the submitted form", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    renderForm(action);
+    const photo = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "avatar.png",
+      { type: "image/png" },
+    );
+
+    await userEvent.upload(screen.getByLabelText(/contact photo/i), photo);
+    expect(
+      await screen.findByRole("img", { name: /contact photo preview/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/first name/i), "Grace");
+    await userEvent.type(screen.getByLabelText(/last name/i), "Hopper");
+    await userEvent.type(screen.getByLabelText(/^email/i), "grace@example.com");
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(action.mock.calls[0][1].get("photo")).toMatch(
+      /^data:image\/png;base64,/,
+    );
+  });
+
+  it("can remove an existing photo", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    renderForm(action, makeContact({ photo: PHOTO }));
+
+    await userEvent.click(screen.getByRole("button", { name: /remove photo/i }));
+    expect(screen.queryByRole("img", { name: /contact photo preview/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(action.mock.calls[0][1].get("photo")).toBe("");
+  });
+
+  it("rejects unsupported photo files before submission", async () => {
+    renderForm(jest.fn());
+    const photo = new File(["<svg/>"], "avatar.svg", { type: "image/svg+xml" });
+
+    await userEvent.upload(screen.getByLabelText(/contact photo/i), photo);
+
+    expect(
+      screen.getByText("Choose a JPG, PNG, WebP, or GIF image"),
+    ).toHaveAttribute("role", "alert");
+    expect(screen.queryByRole("img", { name: /contact photo preview/i })).toBeNull();
   });
 
   it("prefills from an existing contact", () => {

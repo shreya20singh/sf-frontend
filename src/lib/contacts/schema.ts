@@ -1,6 +1,55 @@
 import { z } from "zod";
 import type { ContactInput } from "./types";
 
+export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+export const ACCEPTED_PHOTO_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
+
+const PHOTO_DATA_URL_PATTERN =
+  /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
+
+export function photoValidationError(value: string): string | null {
+  if (!value) return null;
+
+  const match = PHOTO_DATA_URL_PATTERN.exec(value);
+  if (!match || match[2].length % 4 !== 0) {
+    return "Choose a JPG, PNG, WebP, or GIF image";
+  }
+
+  const [, mediaType, encoded] = match;
+  const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0;
+  const byteLength = (encoded.length * 3) / 4 - padding;
+  if (byteLength > MAX_PHOTO_BYTES) return "Photo must be 2 MB or smaller";
+
+  let signature: string;
+  try {
+    signature = atob(encoded.slice(0, 16));
+  } catch {
+    return "Photo contains invalid base64 data";
+  }
+  const byte = (index: number) => signature.charCodeAt(index);
+  const matchesType =
+    (mediaType === "image/jpeg" &&
+      byte(0) === 0xff &&
+      byte(1) === 0xd8 &&
+      byte(2) === 0xff) ||
+    (mediaType === "image/png" &&
+      signature.startsWith("\x89PNG\r\n\x1a\n")) ||
+    (mediaType === "image/gif" &&
+      (signature.startsWith("GIF87a") || signature.startsWith("GIF89a"))) ||
+    (mediaType === "image/webp" &&
+      signature.startsWith("RIFF") &&
+      signature.slice(8, 12) === "WEBP");
+
+  return matchesType
+    ? null
+    : "Photo content does not match its declared image type";
+}
+
 /**
  * Client/server-shared validation for the contact form.
  *
@@ -38,6 +87,13 @@ export const contactInputSchema = z.object({
     .max(320, "Email must be 320 characters or fewer")
     .pipe(z.email("Enter a valid email address"))
     .transform((value) => value.toLowerCase()),
+  photo: z
+    .string()
+    .superRefine((value, context) => {
+      const message = photoValidationError(value);
+      if (message) context.addIssue({ code: "custom", message });
+    })
+    .transform((value) => value || null),
   phone: optionalText(40, "Phone"),
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
@@ -219,9 +275,9 @@ export function formDataToValues(
   formData: FormData,
 ): Record<keyof ContactInput, string> {
   return Object.fromEntries(
-    CONTACT_FIELDS.map((field) => [
-      field.name,
-      String(formData.get(field.name) ?? ""),
-    ]),
+    [
+      ...CONTACT_FIELDS.map((field) => field.name),
+      "photo" as const,
+    ].map((name) => [name, String(formData.get(name) ?? "")]),
   ) as Record<keyof ContactInput, string>;
 }

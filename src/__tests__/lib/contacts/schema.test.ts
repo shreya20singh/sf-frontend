@@ -1,4 +1,5 @@
 import {
+  MAX_PHOTO_BYTES,
   CONTACT_FIELDS,
   contactInputSchema,
   formDataToValues,
@@ -10,6 +11,7 @@ function values(overrides: Record<string, string> = {}) {
     first_name: "Ada",
     last_name: "Lovelace",
     email: "Ada@Example.com",
+    photo: "",
     phone: "",
     company: "",
     job_title: "",
@@ -35,6 +37,28 @@ describe("contactInputSchema", () => {
   it("trims what the user typed", () => {
     expect(contactInputSchema.parse(values({ company: "  Acme  " })).company).toBe(
       "Acme",
+    );
+  });
+
+  it("accepts a supported photo data URL", () => {
+    const photo =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+    expect(contactInputSchema.parse(values({ photo })).photo).toBe(photo);
+  });
+
+  it("rejects a mismatched or oversized photo", () => {
+    const mismatch = contactInputSchema.safeParse(
+      values({ photo: "data:image/png;base64,aGVsbG8=" }),
+    );
+    expect(zodFieldErrors(mismatch.error!).photo).toMatch(/does not match/i);
+
+    const encodedLength = Math.ceil((MAX_PHOTO_BYTES + 1) / 3) * 4;
+    const oversizedBase64 = "iVBORw0KGgoA".padEnd(encodedLength, "A");
+    const oversized =
+      "data:image/png;base64," + oversizedBase64;
+    const tooLarge = contactInputSchema.safeParse(values({ photo: oversized }));
+    expect(zodFieldErrors(tooLarge.error!).photo).toBe(
+      "Photo must be 2 MB or smaller",
     );
   });
 
@@ -79,8 +103,9 @@ describe("formDataToValues", () => {
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
+    expect(extracted.photo).toBe("");
     expect(Object.keys(extracted).sort()).toEqual(
-      CONTACT_FIELDS.map((field) => field.name).sort(),
+      [...CONTACT_FIELDS.map((field) => field.name), "photo"].sort(),
     );
   });
 });

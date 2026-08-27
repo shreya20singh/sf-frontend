@@ -77,6 +77,35 @@ test.describe('Contacts', () => {
     await expect(page.getByRole('heading', { name: 'No matching contacts' })).toBeVisible()
   })
 
+  test('keeps a contact photo through a full-replacement edit', async ({ page }) => {
+    const email = uniqueEmail('photo')
+    const last = `Photo${Date.now().toString().slice(-6)}`
+
+    await page.goto('/contacts/new')
+    await page.getByLabel('First name').fill('Profile')
+    await page.getByLabel('Last name').fill(last)
+    await page.getByLabel('Email', { exact: false }).first().fill(email)
+    await page.getByLabel('Contact photo').setInputFiles({
+      name: 'avatar.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+        'base64',
+      ),
+    })
+    await page.getByRole('button', { name: 'Create contact' }).click()
+
+    const avatarName = `Profile photo of Profile ${last}`
+    await expect(page.getByRole('img', { name: avatarName })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Edit' }).click()
+    await page.getByLabel('Job title').fill('Photo Keeper')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.getByRole('img', { name: avatarName })).toBeVisible()
+
+    await deleteFromDetailPage(page, `Profile ${last}`)
+  })
+
   test('rejects a duplicate email with a field-level error', async ({ page }) => {
     const email = uniqueEmail('dupe')
     const last = `Dupe${Date.now().toString().slice(-6)}`

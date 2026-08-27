@@ -59,6 +59,22 @@ describe("ContactsTable", () => {
 
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
+
+  it("shows a circular profile photo and falls back to initials", () => {
+    const photo =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ";
+    const { container } = render(
+      <ContactsTable
+        contacts={[{ ...CONTACTS[0], photo }, CONTACTS[1]]}
+        query={DEFAULT_LIST_QUERY}
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: /profile photo of ada lovelace/i }),
+    ).toHaveClass("rounded-full", "object-cover");
+    expect(container).toHaveTextContent("GH");
+  });
 });
 
 describe("Pagination", () => {

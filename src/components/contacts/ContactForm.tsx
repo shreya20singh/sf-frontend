@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import ContactPhotoField from "./ContactPhotoField";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
@@ -69,6 +70,11 @@ export default function ContactForm({
           <span>{state.message}</span>
         </div>
       ) : null}
+
+      <ContactPhotoField
+        initialPhoto={state.values?.photo ?? contact?.photo}
+        error={state.fieldErrors?.photo}
+      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">

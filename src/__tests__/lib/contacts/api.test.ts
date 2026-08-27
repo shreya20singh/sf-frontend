@@ -21,6 +21,7 @@ const INPUT: ContactInput = {
   first_name: "Grace",
   last_name: "Hopper",
   email: "grace@example.com",
+  photo: null,
   phone: null,
   company: null,
   job_title: null,
