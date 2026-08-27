@@ -6,12 +6,10 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import {
   ACCEPTED_PHOTO_TYPES,
-  MAX_PHOTO_BYTES,
   PHOTO_FILE_FIELD,
+  photoFileValidationError,
   photoValidationError,
 } from "@/lib/contacts/schema";
-
-const ACCEPTED_TYPES = new Set<string>(ACCEPTED_PHOTO_TYPES);
 
 export default function ContactPhotoField({
   initialPhoto,
@@ -56,13 +54,9 @@ export default function ContactPhotoField({
     const readVersion = invalidateRead();
     setHasChanged(true);
 
-    if (!ACCEPTED_TYPES.has(file.type)) {
-      setClientError("Choose a JPG, PNG, WebP, or GIF image");
-      event.target.value = "";
-      return;
-    }
-    if (file.size > MAX_PHOTO_BYTES) {
-      setClientError("Photo must be 2 MB or smaller");
+    const fileError = photoFileValidationError(file);
+    if (fileError) {
+      setClientError(fileError);
       event.target.value = "";
       return;
     }

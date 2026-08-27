@@ -201,6 +201,81 @@ describe("ContactForm", () => {
     );
   });
 
+  it("keeps address errors attached when a preceding row is removed", async () => {
+    const action = jest.fn(
+      async (): Promise<FormState> => ({
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        addressErrors: {
+          0: { address: "First address is required" },
+          1: { address: "Second address is required" },
+        },
+        values: {
+          addresses: JSON.stringify([
+            {
+              type: "Home",
+              address: "",
+              city: "",
+              state: "",
+              postal_code: "",
+              country: "",
+            },
+            {
+              type: "Work",
+              address: "",
+              city: "",
+              state: "",
+              postal_code: "",
+              country: "",
+            },
+          ]),
+        },
+      }),
+    );
+    renderForm(
+      action,
+      makeContact({
+        addresses: [
+          {
+            id: 1,
+            type: "Home",
+            address: "",
+            city: null,
+            state: null,
+            postal_code: null,
+            country: null,
+          },
+          {
+            id: 2,
+            type: "Work",
+            address: "",
+            city: null,
+            state: null,
+            postal_code: null,
+            country: null,
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    expect(await screen.findByText("First address is required")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(screen.getByRole("group", { name: "Address 1" })).getByRole(
+        "button",
+        { name: /remove address 1/i },
+      ),
+    );
+
+    expect(screen.queryByText("First address is required")).toBeNull();
+    expect(
+      within(screen.getByRole("group", { name: "Address 1" })).getByText(
+        "Second address is required",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("submits the entered values to the action", async () => {
     const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
       async () => ({ status: "idle" }),

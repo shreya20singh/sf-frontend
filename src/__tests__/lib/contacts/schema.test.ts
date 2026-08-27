@@ -4,6 +4,7 @@ import {
   contactInputSchema,
   formDataToValues,
   photoFileToDataUrl,
+  photoFileValidationError,
   photoValidationError,
   zodAddressErrors,
   zodFieldErrors,
@@ -11,6 +12,14 @@ import {
 
 const PHOTO_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const LOSSLESS_WEBP_BASE64 =
+  "UklGRhwAAABXRUJQVlA4TA8AAAAvAAAAAAcQ/Y/+ByKi/wEA";
+const EXTENDED_WEBP_BASE64 =
+  "UklGRlgAAABXRUJQVlA4WAoAAAAQAAAAAAAAAAAAQUxQSAIAAAAAgFZQOCAwAAAA0AEAnQEqAQABAAFAJiWgAnS6AfgAA7AA/vLrf/zYFc1z7/f/0uD9Lg/S4P/SkAAA";
+const ANIMATED_WEBP_BASE64 =
+  "UklGRoQAAABXRUJQVlA4WAoAAAACAAAAAAAAAAAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAAAAAAAAAGQAAAJWUDhMDwAAAC8AAAAABxD9j/4HIqL/AQBBTk1GKAAAAAAAAAAAAAAAAAAAAGQAAABWUDhMDwAAAC8AAAAAB9D/iP4HIqL/AQA=";
+const PROGRESSIVE_JPEG_BASE64 =
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wgARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAUAQEAAAAAAAAAAAAAAAAAAAAF/9oADAMBAAIQAxAAAAGcMFf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAn//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/AX//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/AX//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/An//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IX//2gAMAwEAAgADAAAAEAv/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==";
 
 function values(overrides: Record<string, string> = {}) {
   return {
@@ -134,6 +143,24 @@ describe("contactInputSchema", () => {
     );
   });
 
+  it("accepts one-pixel lossless, extended, and animated WebP images", () => {
+    expect(
+      photoValidationError(`data:image/webp;base64,${LOSSLESS_WEBP_BASE64}`),
+    ).toBeNull();
+    expect(
+      photoValidationError(`data:image/webp;base64,${EXTENDED_WEBP_BASE64}`),
+    ).toBeNull();
+    expect(
+      photoValidationError(`data:image/webp;base64,${ANIMATED_WEBP_BASE64}`),
+    ).toBeNull();
+  });
+
+  it("accepts progressive JPEG images", () => {
+    expect(
+      photoValidationError(`data:image/jpeg;base64,${PROGRESSIVE_JPEG_BASE64}`),
+    ).toBeNull();
+  });
+
   it("requires the three fields the API requires", () => {
     const result = contactInputSchema.safeParse(
       values({ first_name: " ", last_name: "", email: "" }),
@@ -181,13 +208,13 @@ describe("contactInputSchema", () => {
 });
 
 describe("formDataToValues", () => {
-  it("pulls every known field out, defaulting to an empty string", async () => {
+  it("pulls every known field out, defaulting to an empty string", () => {
     const formData = new FormData();
     formData.set("first_name", "Grace");
     formData.set("email", "grace@example.com");
     formData.set("ignored", "nope");
 
-    const extracted = await formDataToValues(formData);
+    const extracted = formDataToValues(formData);
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
@@ -198,7 +225,7 @@ describe("formDataToValues", () => {
     );
   });
 
-  it("converts a native photo file before schema validation", async () => {
+  it("keeps native files out of raw string extraction", () => {
     const bytes = Uint8Array.from(atob(PHOTO_BASE64), (character) =>
       character.charCodeAt(0),
     );
@@ -209,8 +236,41 @@ describe("formDataToValues", () => {
       new File([bytes], "avatar.png", { type: "image/png" }),
     );
 
-    await expect(formDataToValues(formData)).resolves.toMatchObject({
-      photo: `data:image/png;base64,${PHOTO_BASE64}`,
+    expect(formDataToValues(formData).photo).toBe("existing-photo");
+  });
+});
+
+describe("photoFileToDataUrl", () => {
+  it("converts a validated native photo file", async () => {
+    const bytes = Uint8Array.from(atob(PHOTO_BASE64), (character) =>
+      character.charCodeAt(0),
+    );
+    const file = new File([bytes], "avatar.png", { type: "image/png" });
+
+    await expect(photoFileToDataUrl(file)).resolves.toBe(
+      `data:image/png;base64,${PHOTO_BASE64}`,
+    );
+  });
+
+  it("rejects unsupported or oversized files before reading them", async () => {
+    const unsupported = new File(["<svg/>"], "avatar.svg", {
+      type: "image/svg+xml",
     });
+    const oversized = new File(
+      [new Uint8Array(MAX_PHOTO_BYTES + 1)],
+      "avatar.png",
+      { type: "image/png" },
+    );
+    const unsupportedRead = jest.spyOn(unsupported, "arrayBuffer");
+    const oversizedRead = jest.spyOn(oversized, "arrayBuffer");
+
+    expect(photoFileValidationError(unsupported)).toMatch(/Choose/i);
+    expect(photoFileValidationError(oversized)).toBe(
+      "Photo must be 2 MB or smaller",
+    );
+    await expect(photoFileToDataUrl(unsupported)).rejects.toThrow(/Choose/i);
+    await expect(photoFileToDataUrl(oversized)).rejects.toThrow(/2 MB/i);
+    expect(unsupportedRead).not.toHaveBeenCalled();
+    expect(oversizedRead).not.toHaveBeenCalled();
   });
 });

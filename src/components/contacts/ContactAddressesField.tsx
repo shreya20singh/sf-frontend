@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Plus, Trash2 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import {
@@ -11,6 +11,10 @@ import {
 } from "@/lib/contacts/types";
 
 type AddressFormValue = Record<keyof AddressInput, string>;
+type AddressRow = {
+  id: number;
+  value: AddressFormValue;
+};
 
 const EMPTY_ADDRESS: AddressFormValue = {
   type: "Home",
@@ -20,6 +24,8 @@ const EMPTY_ADDRESS: AddressFormValue = {
   postal_code: "",
   country: "",
 };
+
+const EMPTY_ADDRESS_ERRORS: Record<number, AddressFieldErrors> = {};
 
 function isAddressType(value: unknown): value is AddressType {
   return (
@@ -127,16 +133,38 @@ export default function ContactAddressesField({
   initialAddresses = [],
   submittedValue,
   error,
-  addressErrors = {},
+  addressErrors = EMPTY_ADDRESS_ERRORS,
 }: {
   initialAddresses?: AddressInput[];
   submittedValue?: string;
   error?: string;
   addressErrors?: Record<number, AddressFieldErrors>;
 }) {
-  const [addresses, setAddresses] = useState<AddressFormValue[]>(() =>
-    parseSubmittedAddresses(submittedValue, initialAddresses),
+  const nextRowId = useRef(0);
+  const [addresses, setAddresses] = useState<AddressRow[]>(() =>
+    parseSubmittedAddresses(submittedValue, initialAddresses).map((value) => ({
+      id: nextRowId.current++,
+      value,
+    })),
   );
+  const [rowErrorsById, setRowErrorsById] = useState<
+    Record<number, AddressFieldErrors>
+  >({});
+  const previousAddressErrors = useRef<
+    Record<number, AddressFieldErrors> | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (previousAddressErrors.current === addressErrors) return;
+    previousAddressErrors.current = addressErrors;
+
+    const nextErrors: Record<number, AddressFieldErrors> = {};
+    addresses.forEach((row, index) => {
+      const errorForRow = addressErrors[index];
+      if (errorForRow) nextErrors[row.id] = errorForRow;
+    });
+    setRowErrorsById(nextErrors);
+  }, [addressErrors, addresses]);
 
   function updateAddress(
     index: number,
@@ -144,8 +172,10 @@ export default function ContactAddressesField({
     value: string,
   ) {
     setAddresses((current) =>
-      current.map((address, currentIndex) =>
-        currentIndex === index ? { ...address, [field]: value } : address,
+      current.map((row, currentIndex) =>
+        currentIndex === index
+          ? { ...row, value: { ...row.value, [field]: value } }
+          : row,
       ),
     );
   }
@@ -174,7 +204,10 @@ export default function ContactAddressesField({
           variant="secondary"
           size="sm"
           onClick={() =>
-            setAddresses((current) => [...current, { ...EMPTY_ADDRESS }])
+            setAddresses((current) => [
+              ...current,
+              { id: nextRowId.current++, value: { ...EMPTY_ADDRESS } },
+            ])
           }
         >
           <Plus className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
@@ -182,7 +215,11 @@ export default function ContactAddressesField({
         </Button>
       </div>
 
-      <input type="hidden" name="addresses" value={JSON.stringify(addresses)} />
+      <input
+        type="hidden"
+        name="addresses"
+        value={JSON.stringify(addresses.map(({ value }) => value))}
+      />
 
       {addresses.length === 0 ? (
         <div className="flex items-center gap-3 rounded-md border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
@@ -191,14 +228,15 @@ export default function ContactAddressesField({
         </div>
       ) : (
         <div className="space-y-4">
-          {addresses.map((address, index) => {
-            const rowErrors = addressErrors[index] ?? {};
+          {addresses.map((row, index) => {
+            const address = row.value;
+            const rowErrors = rowErrorsById[row.id] ?? {};
             const number = index + 1;
             const typeErrorId = `address-${index}-type-error`;
 
             return (
               <fieldset
-                key={index}
+                key={row.id}
                 className="rounded-lg border border-border bg-card/50 p-4"
               >
                 <legend className="sr-only">Address {number}</legend>

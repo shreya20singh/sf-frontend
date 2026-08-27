@@ -36,6 +36,14 @@ function readUint16LE(bytes: Uint8Array, offset: number): number {
   return bytes[offset] | (bytes[offset + 1] << 8);
 }
 
+function readUint24LE(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16)
+  );
+}
+
 function readUint32BE(bytes: Uint8Array, offset: number): number {
   return (
     bytes[offset] * 0x1000000 +
@@ -101,6 +109,36 @@ function hasPngStructure(bytes: Uint8Array): boolean {
   return false;
 }
 
+function skipJpegScanData(
+  bytes: Uint8Array,
+  offset: number,
+): number | null {
+  let sawScanData = false;
+
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      sawScanData = true;
+      offset += 1;
+      continue;
+    }
+
+    const markerStart = offset;
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+    if (offset >= bytes.length) return null;
+
+    const marker = bytes[offset];
+    if (marker === 0x00 || (marker >= 0xd0 && marker <= 0xd7)) {
+      sawScanData = true;
+      offset += 1;
+      continue;
+    }
+
+    return sawScanData ? markerStart : null;
+  }
+
+  return null;
+}
+
 function hasJpegStructure(bytes: Uint8Array): boolean {
   if (bytes.length < 4 || !startsWithBytes(bytes, 0, [0xff, 0xd8])) {
     return false;
@@ -115,7 +153,11 @@ function hasJpegStructure(bytes: Uint8Array): boolean {
     if (offset >= bytes.length) return false;
 
     const marker = bytes[offset++];
-    if (marker === 0x00 || marker === 0xd9) return false;
+    if (marker === 0x00 || marker === 0xd8) return false;
+
+    if (marker === 0xd9) {
+      return sawFrame && offset === bytes.length;
+    }
 
     if (marker === 0xda) {
       if (offset + 2 > bytes.length) return false;
@@ -125,29 +167,10 @@ function hasJpegStructure(bytes: Uint8Array): boolean {
       }
       offset += segmentLength;
 
-      let sawScanData = false;
-      while (offset < bytes.length) {
-        if (bytes[offset] !== 0xff) {
-          sawScanData = true;
-          offset += 1;
-          continue;
-        }
-
-        while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
-        if (offset >= bytes.length) return false;
-
-        const scanMarker = bytes[offset];
-        if (scanMarker === 0x00 || (scanMarker >= 0xd0 && scanMarker <= 0xd7)) {
-          sawScanData = true;
-          offset += 1;
-          continue;
-        }
-        if (scanMarker === 0xd9) {
-          return sawFrame && sawScanData && offset + 1 === bytes.length;
-        }
-        return false;
-      }
-      return false;
+      const nextMarker = skipJpegScanData(bytes, offset);
+      if (nextMarker === null) return false;
+      offset = nextMarker;
+      continue;
     }
 
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
@@ -163,7 +186,7 @@ function hasJpegStructure(bytes: Uint8Array): boolean {
       marker <= 0xcf &&
       ![0xc4, 0xc8, 0xcc].includes(marker);
     if (isFrameMarker) {
-      if (segmentLength < 7) return false;
+      if (segmentLength < 8) return false;
       const frameData = offset + 2;
       if (
         readUint16BE(bytes, frameData + 1) === 0 ||
@@ -251,6 +274,71 @@ function hasGifStructure(bytes: Uint8Array): boolean {
   return false;
 }
 
+function hasWebpImageChunk(
+  bytes: Uint8Array,
+  type: string,
+  dataStart: number,
+  length: number,
+): boolean {
+  if (dataStart + length > bytes.length) return false;
+
+  if (type === "VP8 ") {
+    return (
+      length >= 10 &&
+      startsWithBytes(bytes, dataStart + 3, [0x9d, 0x01, 0x2a]) &&
+      (readUint16LE(bytes, dataStart + 6) & 0x3fff) > 0 &&
+      (readUint16LE(bytes, dataStart + 8) & 0x3fff) > 0
+    );
+  }
+
+  if (type === "VP8L") {
+    if (length < 5 || bytes[dataStart] !== 0x2f) return false;
+    const dimensions = readUint32LE(bytes, dataStart + 1);
+    const width = (dimensions & 0x3fff) + 1;
+    const height = ((dimensions >>> 14) & 0x3fff) + 1;
+    return width > 0 && height > 0;
+  }
+
+  return false;
+}
+
+function hasWebpFrameData(
+  bytes: Uint8Array,
+  offset: number,
+  length: number,
+): boolean {
+  const end = offset + length;
+  let sawImage = false;
+  let sawAlpha = false;
+
+  while (offset + 8 <= end) {
+    const type = readAscii(bytes, offset, 4);
+    const chunkLength = readUint32LE(bytes, offset + 4);
+    const dataStart = offset + 8;
+    const paddedLength = chunkLength + (chunkLength & 1);
+    if (paddedLength > end - dataStart) return false;
+
+    if (type === "ALPH") {
+      if (sawAlpha || chunkLength === 0) return false;
+      sawAlpha = true;
+    } else if (type === "VP8 " || type === "VP8L") {
+      if (
+        sawImage ||
+        !hasWebpImageChunk(bytes, type, dataStart, chunkLength)
+      ) {
+        return false;
+      }
+      sawImage = true;
+    } else {
+      return false;
+    }
+
+    offset = dataStart + paddedLength;
+  }
+
+  return sawImage && offset === end;
+}
+
 function hasWebpStructure(bytes: Uint8Array): boolean {
   if (
     bytes.length < 20 ||
@@ -263,6 +351,10 @@ function hasWebpStructure(bytes: Uint8Array): boolean {
 
   let offset = 12;
   let sawImage = false;
+  let sawExtendedHeader = false;
+  let hasAnimationFeature = false;
+  let sawAnimationHeader = false;
+  let sawAnimationFrame = false;
 
   while (offset + 8 <= bytes.length) {
     const type = readAscii(bytes, offset, 4);
@@ -272,43 +364,43 @@ function hasWebpStructure(bytes: Uint8Array): boolean {
     if (paddedLength > bytes.length - dataStart) return false;
 
     if (type === "VP8 ") {
-      if (
-        length < 10 ||
-        !startsWithBytes(bytes, dataStart + 3, [0x9d, 0x01, 0x2a]) ||
-        (readUint16LE(bytes, dataStart + 6) & 0x3fff) === 0 ||
-        (readUint16LE(bytes, dataStart + 8) & 0x3fff) === 0
-      ) {
-        return false;
-      }
+      if (!hasWebpImageChunk(bytes, type, dataStart, length)) return false;
       sawImage = true;
     } else if (type === "VP8L") {
-      if (length < 5 || bytes[dataStart] !== 0x2f) return false;
-      const dimensions =
-        bytes[dataStart + 1] |
-        (bytes[dataStart + 2] << 8) |
-        (bytes[dataStart + 3] << 16) |
-        (bytes[dataStart + 4] << 24);
-      if ((dimensions & 0x3fff) === 0 || ((dimensions >>> 14) & 0x3fff) === 0) {
-        return false;
-      }
+      if (!hasWebpImageChunk(bytes, type, dataStart, length)) return false;
       sawImage = true;
     } else if (type === "VP8X") {
-      if (length < 10) return false;
-      const width =
-        bytes[dataStart + 4] |
-        (bytes[dataStart + 5] << 8) |
-        (bytes[dataStart + 6] << 16);
-      const height =
-        bytes[dataStart + 7] |
-        (bytes[dataStart + 8] << 8) |
-        (bytes[dataStart + 9] << 16);
-      if (width === 0 || height === 0) return false;
+      if (sawExtendedHeader || length !== 10) return false;
+      const width = readUint24LE(bytes, dataStart + 4) + 1;
+      const height = readUint24LE(bytes, dataStart + 7) + 1;
+      if (width < 1 || height < 1) return false;
+      sawExtendedHeader = true;
+      hasAnimationFeature = (bytes[dataStart] & 0x02) !== 0;
+    } else if (type === "ANIM") {
+      if (length !== 6) return false;
+      sawAnimationHeader = true;
+    } else if (type === "ANMF") {
+      if (length < 24) return false;
+      const frameWidth = readUint24LE(bytes, dataStart + 6) + 1;
+      const frameHeight = readUint24LE(bytes, dataStart + 9) + 1;
+      if (frameWidth < 1 || frameHeight < 1) return false;
+
+      if (!hasWebpFrameData(bytes, dataStart + 16, length - 16)) {
+        return false;
+      }
+      sawAnimationFrame = true;
+      sawImage = true;
     }
 
     offset = dataStart + paddedLength;
   }
 
-  return sawImage && offset === bytes.length;
+  const hasAnimationData = sawAnimationHeader || sawAnimationFrame;
+  const animationIsValid =
+    (!hasAnimationFeature && !hasAnimationData) ||
+    (hasAnimationFeature && sawAnimationHeader && sawAnimationFrame);
+
+  return sawImage && animationIsValid && offset === bytes.length;
 }
 
 function hasImageStructure(
@@ -354,7 +446,18 @@ export function photoValidationError(value: string): string | null {
     : "Photo content does not match its declared image type";
 }
 
+export function photoFileValidationError(file: File): string | null {
+  if (!ACCEPTED_PHOTO_TYPES.some((type) => type === file.type)) {
+    return "Choose a JPG, PNG, WebP, or GIF image";
+  }
+  if (file.size > MAX_PHOTO_BYTES) return "Photo must be 2 MB or smaller";
+  return null;
+}
+
 export async function photoFileToDataUrl(file: File): Promise<string> {
+  const validationError = photoFileValidationError(file);
+  if (validationError) throw new Error(validationError);
+
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
@@ -582,9 +685,9 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
 );
 
 /** Pull the contact fields out of a submitted form, as raw strings. */
-export async function formDataToValues(
+export function formDataToValues(
   formData: FormData,
-): Promise<Record<ContactFormFieldName, string>> {
+): Record<ContactFormFieldName, string> {
   const values = Object.fromEntries(
     [
       ...CONTACT_FIELDS.map((field) => field.name),
@@ -592,11 +695,6 @@ export async function formDataToValues(
       "addresses" as const,
     ].map((name) => [name, String(formData.get(name) ?? "")]),
   ) as Record<ContactFormFieldName, string>;
-
-  const photoFile = formData.get(PHOTO_FILE_FIELD);
-  if (photoFile && typeof photoFile !== "string" && photoFile.size > 0) {
-    values.photo = await photoFileToDataUrl(photoFile);
-  }
 
   return values;
 }
