@@ -13,6 +13,10 @@ import {
 import {
   contactInputSchema,
   formDataToValues,
+  PHOTO_FILE_FIELD,
+  photoFileToDataUrl,
+  photoFileValidationError,
+  zodAddressErrors,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
 import type { Contact, FormState } from "@/lib/contacts/types";
@@ -39,6 +43,19 @@ export async function saveContactAction(
   formData: FormData,
 ): Promise<FormState> {
   const values = formDataToValues(formData);
+  const photoFile = formData.get(PHOTO_FILE_FIELD);
+  if (photoFile && typeof photoFile !== "string" && photoFile.size > 0) {
+    const photoFileError = photoFileValidationError(photoFile);
+    if (photoFileError) {
+      return {
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: { photo: photoFileError },
+        values,
+      };
+    }
+    values.photo = await photoFileToDataUrl(photoFile);
+  }
 
   const parsed = contactInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -46,6 +63,7 @@ export async function saveContactAction(
       status: "error",
       message: "Please fix the highlighted fields.",
       fieldErrors: zodFieldErrors(parsed.error),
+      addressErrors: zodAddressErrors(parsed.error),
       values,
     };
   }
@@ -72,10 +90,11 @@ export async function saveContactAction(
         };
       }
       if (error.status === 422) {
+        const errors = toFieldErrors(error);
         return {
           status: "error",
           message: "The API rejected these values.",
-          fieldErrors: toFieldErrors(error),
+          ...errors,
           values,
         };
       }

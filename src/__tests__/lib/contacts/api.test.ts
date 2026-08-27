@@ -21,14 +21,11 @@ const INPUT: ContactInput = {
   first_name: "Grace",
   last_name: "Hopper",
   email: "grace@example.com",
+  photo: null,
   phone: null,
   company: null,
   job_title: null,
-  address: null,
-  city: null,
-  state: null,
-  postal_code: null,
-  country: null,
+  addresses: [],
   notes: null,
 };
 
@@ -156,12 +153,37 @@ describe("error translation", () => {
     );
 
     expect(toFieldErrors(error)).toEqual({
-      email: "value is not a valid email address",
-      first_name: "String should have at least 1 character",
+      fieldErrors: {
+        email: "value is not a valid email address",
+        first_name: "String should have at least 1 character",
+      },
+      addressErrors: {},
     });
   });
 
-  it("returns nothing for a non-validation body", () => {
-    expect(toFieldErrors(new ApiError(500, "boom"))).toEqual({});
+  it("maps nested address validation errors to their row", () => {
+    const error = new ApiError(
+      422,
+      JSON.stringify({
+        detail: [
+          {
+            loc: ["body", "addresses", 1, "address"],
+            msg: "Street address is required",
+          },
+        ],
+      }),
+    );
+
+    expect(toFieldErrors(error)).toEqual({
+      fieldErrors: {},
+      addressErrors: { 1: { address: "Street address is required" } },
+    });
+  });
+
+  it("returns empty groups for a non-validation body", () => {
+    expect(toFieldErrors(new ApiError(500, "boom"))).toEqual({
+      fieldErrors: {},
+      addressErrors: {},
+    });
   });
 });

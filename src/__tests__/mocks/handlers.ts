@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { apiBaseUrl } from "@/lib/apiClient";
-import type { Contact, ContactPage } from "@/lib/contacts/types";
+import type {
+  Contact,
+  ContactInput,
+  ContactListItem,
+  ContactPage,
+} from "@/lib/contacts/types";
 
 /** Prefix a path with the configured API base so handlers match apiClient URLs. */
 export function api(path: string): string {
@@ -16,14 +21,21 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
     first_name,
     last_name,
     email: "ada@example.com",
+    photo: null,
     phone: "+1-415-555-0101",
     company: "Analytical Engines",
     job_title: "Mathematician",
-    address: null,
-    city: "San Francisco",
-    state: "CA",
-    postal_code: null,
-    country: "USA",
+    addresses: [
+      {
+        id: 1,
+        type: "Work",
+        address: "1 Market St",
+        city: "San Francisco",
+        state: "CA",
+        postal_code: null,
+        country: "USA",
+      },
+    ],
     notes: null,
     created_at: "2026-08-19T17:04:53.743932Z",
     updated_at: "2026-08-19T17:04:53.743936Z",
@@ -32,8 +44,30 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
   };
 }
 
-export function makePage(items: Contact[], total = items.length): ContactPage {
+export function makePage(
+  items: ContactListItem[],
+  total = items.length,
+): ContactPage {
   return { items, total, limit: 25, offset: 0 };
+}
+
+function storedInput(
+  input: Partial<ContactInput>,
+  id: number,
+): Partial<Contact> {
+  const { addresses, ...fields } = input;
+  return {
+    ...fields,
+    id,
+    ...(addresses
+      ? {
+          addresses: addresses.map((address, index) => ({
+            ...address,
+            id: id * 100 + index,
+          })),
+        }
+      : {}),
+  };
 }
 
 export const CONTACTS: Contact[] = [
@@ -78,13 +112,14 @@ export const handlers = [
   }),
 
   http.post(api("/api/v1/contacts"), async ({ request }) => {
-    const body = (await request.json()) as Partial<Contact>;
-    return HttpResponse.json(makeContact({ ...body, id: 99 }), { status: 201 });
+    const body = (await request.json()) as Partial<ContactInput>;
+    return HttpResponse.json(makeContact(storedInput(body, 99)), { status: 201 });
   }),
 
   http.put(api("/api/v1/contacts/:id"), async ({ request, params }) => {
-    const body = (await request.json()) as Partial<Contact>;
-    return HttpResponse.json(makeContact({ ...body, id: Number(params.id) }));
+    const body = (await request.json()) as Partial<ContactInput>;
+    const id = Number(params.id);
+    return HttpResponse.json(makeContact(storedInput(body, id)));
   }),
 
   http.delete(api("/api/v1/contacts/:id"), () => new HttpResponse(null, { status: 204 })),

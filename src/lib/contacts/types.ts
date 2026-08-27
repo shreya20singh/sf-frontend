@@ -3,35 +3,63 @@
  * Field names stay snake_case so payloads map 1:1 onto the wire format.
  */
 
+export const ADDRESS_TYPES = ["Home", "Work", "Other"] as const;
+export type AddressType = (typeof ADDRESS_TYPES)[number];
+
+export interface AddressInput {
+  type: AddressType;
+  address: string;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+}
+
+export interface Address extends AddressInput {
+  id: number;
+}
+
 /** `ContactRead` — a stored contact, as returned by every contact endpoint. */
 export interface Contact {
   id: number;
   first_name: string;
   last_name: string;
   email: string;
+  photo: string | null;
   phone: string | null;
   company: string | null;
   job_title: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  country: string | null;
+  addresses: Address[];
   notes: string | null;
   created_at: string;
   updated_at: string;
   full_name: string;
 }
 
+/** `ContactListItem` — a collection item, which may omit the photo payload. */
+export type ContactListItem = Omit<Contact, "photo"> & {
+  photo?: string | null;
+};
+
 /** Every editable field, i.e. `ContactCreate` / `ContactReplace`. */
-export type ContactInput = Omit<
+type ContactScalarInput = Omit<
   Contact,
-  "id" | "created_at" | "updated_at" | "full_name"
+  "id" | "addresses" | "created_at" | "updated_at" | "full_name"
+>;
+
+export type ContactInput = ContactScalarInput & {
+  addresses: AddressInput[];
+};
+
+export type ContactFieldName = Exclude<keyof ContactInput, "addresses">;
+export type ContactFormFieldName = ContactFieldName | "addresses";
+export type AddressFieldErrors = Partial<
+  Record<keyof AddressInput, string>
 >;
 
 /** `ContactPage` — one page of contacts plus the totals needed to paginate. */
 export interface ContactPage {
-  items: Contact[];
+  items: ContactListItem[];
   total: number;
   limit: number;
   offset: number;
@@ -74,9 +102,11 @@ export type FormState = {
   /** Message shown above the form; used for API-level failures. */
   message?: string;
   /** Per-field messages keyed by input name. */
-  fieldErrors?: Partial<Record<keyof ContactInput, string>>;
+  fieldErrors?: Partial<Record<ContactFormFieldName, string>>;
+  /** Nested messages keyed by the zero-based address row. */
+  addressErrors?: Record<number, AddressFieldErrors>;
   /** Echo of the submitted values so the form survives a failed round trip. */
-  values?: Partial<Record<keyof ContactInput, string>>;
+  values?: Partial<Record<ContactFormFieldName, string>>;
 };
 
 export const EMPTY_FORM_STATE: FormState = { status: "idle" };

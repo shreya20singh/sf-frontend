@@ -3,6 +3,9 @@ import "server-only";
 import { ApiError, apiFetch, apiJson } from "@/lib/apiClient";
 import type {
   Contact,
+  AddressFieldErrors,
+  AddressInput,
+  ContactFormFieldName,
   ContactInput,
   ContactPage,
   HealthResponse,
@@ -126,16 +129,27 @@ export function apiErrorMessage(error: ApiError, fallback: string): string {
  */
 export function toFieldErrors(
   error: ApiError,
-): Partial<Record<keyof ContactInput, string>> {
+): {
+  fieldErrors: Partial<Record<ContactFormFieldName, string>>;
+  addressErrors: Record<number, AddressFieldErrors>;
+} {
   const detail = error.json<{ detail?: ValidationIssue[] }>()?.detail;
-  if (!Array.isArray(detail)) return {};
+  if (!Array.isArray(detail)) return { fieldErrors: {}, addressErrors: {} };
 
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
+  const fieldErrors: Partial<Record<ContactFormFieldName, string>> = {};
+  const addressErrors: Record<number, AddressFieldErrors> = {};
   for (const issue of detail) {
-    const field = issue.loc?.[issue.loc.length - 1];
-    if (typeof field === "string" && field !== "body") {
-      fieldErrors[field as keyof ContactInput] ??= issue.msg;
+    const [, field, index, nestedField] = issue.loc ?? [];
+    if (
+      field === "addresses" &&
+      typeof index === "number" &&
+      typeof nestedField === "string"
+    ) {
+      addressErrors[index] ??= {};
+      addressErrors[index][nestedField as keyof AddressInput] ??= issue.msg;
+    } else if (typeof field === "string" && field !== "body") {
+      fieldErrors[field as ContactFormFieldName] ??= issue.msg;
     }
   }
-  return fieldErrors;
+  return { fieldErrors, addressErrors };
 }

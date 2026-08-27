@@ -1,7 +1,9 @@
 # sf-frontend
 
 Front end for the [Contacts API](http://127.0.0.1:8000/docs) — browse, search, sort,
-page through, create, edit, and delete contacts.
+page through, create, edit, and delete contacts. Contacts can include an optional
+profile photo and any number of typed addresses. The UI renders photos as
+circular avatars and falls back to initials.
 
 Next.js 16 (App Router) · TypeScript · Tailwind CSS · Zod · Jest + Testing Library
 + MSW · Playwright.
@@ -42,8 +44,9 @@ The landing route (`/` redirects here). What to check, top to bottom:
   selector. Both write to the URL, so the state survives a reload and is
   shareable.
 - **Table** — sortable `Name` and `Email` headers (the arrow shows the active
-  column and direction), an initials avatar per row, `Job title at Company` as
-  the subtitle, and per-row pencil (edit) and trash (delete) actions.
+  column and direction), a circular photo or initials avatar per row,
+  `Job title at Company` as the subtitle, and per-row pencil (edit) and trash
+  (delete) actions.
 - **Footer row** — `Showing 1–3 of 3` with Previous/Next, both disabled on a
   single page.
 - **Version stamp** — `web v0.1.0 (build 2 · 8ce2dc0)` at the bottom of every
@@ -63,9 +66,18 @@ Click a row to get here. It confirms the detail read path works end to end:
 - **Header** — avatar, name, and `Job title at Company`, with **Edit**
   (`/contacts/[id]/edit`) and a destructive **Delete** that asks before it acts.
 - **Field table** — email and phone rendered as `mailto:` / `tel:` links, then
-  company, job title, address, and notes. Empty optional fields show `—` rather
+  company, job title, and notes. Empty optional fields show `—` rather
   than collapsing, so the shape of the record stays readable.
+- **Addresses** — separate cards grouped under `Home`, `Work`, and `Other`, with
+  every saved address row visible.
 - **Metadata table** — `ID`, `Created`, and `Last updated` in UTC, monospaced.
+
+The create and edit forms accept JPG, PNG, WebP, or GIF photos up to 2 MB. The
+image is stored as a base64 data URL by the in-memory backend, so it is retained
+through full-replacement edits but is lost when the backend process restarts.
+The same forms can add, remove, reorder-by-deletion, and replace multiple typed
+addresses; each row is validated independently and stored in the backend's
+separate `addresses` table.
 
 Hand-editing the URL to an ID that does not exist gives you the styled 404 page
 (`src/app/not-found.tsx`), not a stack trace — that is also worth a quick try.
@@ -131,10 +143,11 @@ e2e/                      Playwright specs (run against the real API)
 
 ## Conventions
 
-- **Forms** — one source of truth: `CONTACT_FIELD_GROUPS` in
-  `src/lib/contacts/schema.ts` drives both the rendered fields and the Zod rules,
-  which mirror the API's own limits. Submitting is a real form `action`, so it
-  works before hydration; `useActionState` surfaces what comes back.
+- **Forms** — scalar field metadata and all Zod rules live in
+  `src/lib/contacts/schema.ts`; the repeatable address editor serializes its
+  ordered rows into the same form action. The rules mirror the API's own limits.
+  Submitting is a real form `action`, so it works before hydration;
+  `useActionState` surfaces scalar and per-address errors.
 - **Styling** — Tailwind against semantic CSS variables (`bg-background`,
   `text-muted-foreground`, `border-hairline`, …) defined in `src/app/globals.css`.
   Dark is the default; light lives under `[data-theme="light"]`. Add colours as

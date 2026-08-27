@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import ContactsTable from "@/components/contacts/ContactsTable";
 import Pagination from "@/components/contacts/Pagination";
 import EmptyState from "@/components/contacts/EmptyState";
@@ -58,6 +58,28 @@ describe("ContactsTable", () => {
     );
 
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("shows a circular profile photo and falls back to initials", () => {
+    const photo =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const { container } = render(
+      <ContactsTable
+        contacts={[{ ...CONTACTS[0], photo }, CONTACTS[1]]}
+        query={DEFAULT_LIST_QUERY}
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: /profile photo of ada lovelace/i }),
+    ).toHaveClass("rounded-full", "object-cover");
+    expect(container).toHaveTextContent("GH");
+
+    fireEvent.error(
+      screen.getByRole("img", { name: /profile photo of ada lovelace/i }),
+    );
+    expect(screen.queryByRole("img", { name: /profile photo of ada lovelace/i })).toBeNull();
+    expect(container).toHaveTextContent("AL");
   });
 });
 

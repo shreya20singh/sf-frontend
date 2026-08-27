@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Pencil } from "lucide-react";
+import { ChevronLeft, MapPin, Pencil } from "lucide-react";
 import ContactAvatar from "@/components/contacts/ContactAvatar";
 import DeleteContactButton from "@/components/contacts/DeleteContactButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { getContact } from "@/lib/contacts/api";
 import { addressLine, formatTimestamp, jobLine } from "@/lib/contacts/format";
+import { ADDRESS_TYPES } from "@/lib/contacts/types";
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -43,7 +44,10 @@ export default async function ContactDetailPage({ params }: PageProps) {
   if (!contact) notFound();
 
   const subtitle = jobLine(contact);
-  const address = addressLine(contact);
+  const addressGroups = ADDRESS_TYPES.map((type) => ({
+    type,
+    addresses: contact.addresses.filter((address) => address.type === type),
+  })).filter((group) => group.addresses.length > 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -102,13 +106,57 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </Row>
         <Row label="Company">{contact.company}</Row>
         <Row label="Job title">{contact.job_title}</Row>
-        <Row label="Address">{address}</Row>
         <Row label="Notes">
           {contact.notes ? (
             <span className="whitespace-pre-wrap">{contact.notes}</span>
           ) : null}
         </Row>
       </dl>
+
+      <section className="rounded-lg border border-border bg-card">
+        <div className="border-b border-hairline px-4 py-3">
+          <h2 className="font-display text-sm font-semibold text-foreground">
+            Addresses
+          </h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            {contact.addresses.length === 1
+              ? "1 saved address"
+              : `${contact.addresses.length} saved addresses`}
+          </p>
+        </div>
+
+        {addressGroups.length === 0 ? (
+          <div className="flex items-center gap-3 px-4 py-5 text-sm text-muted-foreground">
+            <MapPin className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+            No addresses saved.
+          </div>
+        ) : (
+          <div className="space-y-5 p-4">
+            {addressGroups.map((group) => (
+              <div key={group.type} className="space-y-2">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+                  {group.type}
+                </h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {group.addresses.map((address) => (
+                    <address
+                      key={address.id}
+                      className="flex gap-3 rounded-md border border-hairline bg-secondary/20 p-3 text-sm not-italic text-foreground"
+                    >
+                      <MapPin
+                        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                      />
+                      <span>{addressLine(address)}</span>
+                    </address>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <dl className="rounded-lg border border-border bg-card/50 text-[13px]">
         <Row label="ID">
